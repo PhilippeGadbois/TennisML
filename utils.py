@@ -1,5 +1,6 @@
 import pyodbc as pdb
 import pandas as pd
+from sqlalchemy import create_engine
 
 
 def sql_read(query):
@@ -22,8 +23,9 @@ def access_read(query):
     conn.close()
     return res
 
-
+# You can create DSN in Control Panel > System and Security > Administrative Tools > ODBC Data Sources (64-bit)
+# User DSN > Add... > SQL Server > Input Name to SQLDSN > Server is your server name (DESKTOP-E5TG60B\SQLEXPRESS in my case)
+# Next > Next > Change the default database to: TennisML > Finish
 def sql_write(df, table):
-    conn = pdb.connect(driver='{SQL Server}', server='DESKTOP-E5TG60B\SQLEXPRESS', Trusted_Connection=True)
-    df.to_sql(table, conn)
-    conn.close()
+    engine = create_engine("mssql+pyodbc://SQLDSN")
+    df.to_sql(con=engine, name=table, schema='Stat', index=False, if_exists='replace')
