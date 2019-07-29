@@ -36,8 +36,8 @@ CREATE TABLE Stat.Matches (
 	TournamentID INT,
 	Date DATE,
 	Result VARCHAR(255),
-	Odds_Marathonbet FLOAT,
-	Odds_Pinnacle FLOAT,
+	Odds_1 FLOAT,
+	Odds_2 FLOAT,
 	FirstServePercentage_1 FLOAT,
 	FirstServePercentage_2 FLOAT,
 	Aces_1 INT,
@@ -71,4 +71,34 @@ CREATE TABLE Stat.Matches (
 	AverageSecondServeSpeed_1 INT,
 	AverageSecondServeSpeed_2 INT
 )
+
+CREATE TABLE Stat.Features (
+	PlayerID_1 INT,
+	PlayerID_2 INT,
+	TournamentID INT,
+	Date DATE,
+	Odds_1 FLOAT,
+	Odds_2 FLOAT,
+	FS FLOAT,
+	W1SP FLOAT,
+	W2SP FLOAT,
+	WSP FLOAT,
+	WRP FLOAT,
+	TPW FLOAT,
+	TMW FLOAT,
+	ACES FLOAT,
+	DF FLOAT,
+	UE FLOAT,
+	WIS FLOAT,
+	BP FLOAT,
+	NA FLOAT,
+	A1S FLOAT,
+	A2S FLOAT,
+	FATIGUE FLOAT,
+	RETIRED BINARY,
+	COMPLETE FLOAT,
+	SERVEADV FLOAT,
+	DIRECT FLOAT
+)
+
 
