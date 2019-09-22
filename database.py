@@ -1,6 +1,31 @@
 import utils
 import pandas as pd
 import const
+import numpy as np
+from datetime import date, datetime
+import math
+
+class Features:
+  def __init__(self, FS, W1SP, W2SP, WSP, WRP, TPW, ACES, DF, UE, WIS, BP, NA, A1S, A2S, COMPLETE, SERVEADV, DIRECT, UNC):
+    self.FS = FS
+    self.W1SP = W1SP
+    self.W2SP = W2SP
+    self.WSP = WSP
+    self.WRP = WRP
+    self.TPW = TPW
+    self.ACES = ACES
+    self.DF = DF
+    self.UE = UE
+    self.WIS = WIS
+    self.BP = BP
+    self.NA = NA
+    self.A1S = A1S
+    self.A2S = A2S
+    self.COMPLETE = COMPLETE
+    self.SERVEADV = SERVEADV
+    self.DIRECT = DIRECT
+    self.UNC = UNC
+
 
 def update():
     # Importing Players Table
@@ -47,17 +72,26 @@ def update():
     # Win on receiving
     stat['RPWP_1'] = stat['RPW_1'] / stat['RPWOF_1']
     stat['RPWP_2'] = stat['RPW_2'] / stat['RPWOF_2']
+    # Break points percentage
+    stat['BP_1'] = stat['BP_1'] / stat['BPOF_1']
+    stat['BP_2'] = stat['BP_2'] / stat['BPOF_2']
+    # Net approaches percentage
+    stat['NA_1'] = stat['NA_1'] / stat['NAOF_1']
+    stat['NA_2'] = stat['NA_2'] / stat['NAOF_2']
+    # Total points won percentage
+    stat['TPWP_1'] = stat['TPW_1'] / (stat['TPW_1'] + stat['TPW_2'])
+    stat['TPWP_2'] = stat['TPW_2'] / (stat['TPW_1'] + stat['TPW_2'])
+
     stat = stat[['ID1', 'ID2', 'ID_T', 'FSP_1', 'FSP_2', 'ACES_1', 'ACES_2', 'DF_1', 'DF_2', 'UE_1', 'UE_2',
                  'W1SP_1', 'W1SP_2', 'W2SP_1', 'W2SP_2', 'RPWP_1', 'RPWP_2', 'WIS_1', 'WIS_2', 'BP_1', 'BP_2',
-                 'BPOF_1', 'BPOF_2', 'NA_1', 'NA_2', 'NAOF_1', 'NAOF_2', 'TPW_1', 'TPW_2', 'FAST_1', 'FAST_2',
-                 'A1S_1', 'A1S_2', 'A2S_1', 'A2S_2']]
+                 'NA_1', 'NA_2', 'TPWP_1', 'TPWP_2', 'FAST_1', 'FAST_2', 'A1S_1', 'A1S_2', 'A2S_1', 'A2S_2']]
     stat.columns = ['PlayerID_1', 'PlayerID_2', 'TournamentID', 'FirstServePercentage_1', 'FirstServePercentage_2',
                     'Aces_1', 'Aces_2', 'DoubleFaults_1', 'DoubleFaults_2', 'UnforcedErrors_1', 'UnforcedErrors_2',
                     'WonFirstServePercentage_1', 'WonFirstServePercentage_2', 'WonSecondServePercentage_1',
                     'WonSecondServePercentage_2', 'WonReturnPercentage_1', 'WonReturnPercentage_2', 'Winners_1',
-                    'Winners_2', 'BreakPointsWon_1', 'BreakPointsWon_2', 'BreakPointsTotal_1', 'BreakPointsTotal_2',
-                    'NetApproachesWon_1', 'NetApproachesWon_2', 'NetApproachesTotal_1', 'NetApproachesTotal_2',
-                    'TotalPointsWon_1', 'TotalPointsWon_2', 'FastestServe_1', 'FastestServe_2',
+                    'Winners_2', 'BreakPointsWonPercentage_1', 'BreakPointsWonPercentage_2',
+                    'NetApproachesWonPercentage_1', 'NetApproachesWonPercentage_2',
+                    'TotalPointsWonPercentage_1', 'TotalPointsWonPercentage_2', 'FastestServe_1', 'FastestServe_2',
                     'AverageFirstServeSpeed_1', 'AverageFirstServeSpeed_2', 'AverageSecondServeSpeed_1',
                     'AverageSecondServeSpeed_2']
     # Merging games and odds
@@ -83,8 +117,8 @@ def FindComps(ID1, ID2, GameDate):
     query = "DECLARE @Player_ID INTEGER; "\
             "DECLARE @GameDate VARCHAR(255); "\
             "SET @Player_ID = " + str(ID1) +\
-            "SET @GameDate = " + GameDate +\
-            "SELECT DISTINCT PlayerID_1 AS ID "\
+            "  SET @GameDate = '" + str(GameDate) + "' "\
+            "  SELECT DISTINCT PlayerID_1 AS ID "\
             "  FROM [TennisML].[Stat].[Matches] "\
             "  WHERE PlayerID_2 = @Player_ID AND Date < @GameDate "\
             "UNION "\
@@ -95,8 +129,8 @@ def FindComps(ID1, ID2, GameDate):
     query = "DECLARE @Player_ID INTEGER; "\
             "DECLARE @GameDate VARCHAR(255); "\
             "SET @Player_ID = " + str(ID2) +\
-            "SET @GameDate = " + GameDate +\
-            "SELECT DISTINCT PlayerID_1 AS ID "\
+            "  SET @GameDate = '" + str(GameDate) + "' "\
+            "  SELECT DISTINCT PlayerID_1 AS ID "\
             "  FROM [TennisML].[Stat].[Matches] "\
             "  WHERE PlayerID_2 = @Player_ID AND Date < @GameDate "\
             "UNION "\
@@ -104,38 +138,370 @@ def FindComps(ID1, ID2, GameDate):
             "  FROM [TennisML].[Stat].[Matches] "\
             "  WHERE PlayerID_1 = @Player_ID AND Date < @GameDate "
     df_2 = utils.sql_read(query)
-    df = df_1[df_1.isin(df_2)]
-    return df.dropna().astype(int)
+    df = pd.merge(df_1, df_2, 'inner', on=['ID'])
+    return df
 
 def FindCompsGames(ID1, ID2, GameDate):
-    ID1 = 19
-    ID2 = 5992
-    GameDate = '20140101'
     df = FindComps(ID1, ID2, GameDate)
     # TODO: Complete function. Adding ids to sql query
-    comps = df.to_string(index=False)
-    query = "SELECT * "\
-            "FROM TennisML.Stat.Matches "\
-            "WHERE (PlayerID_1 IN (" + ID1 + ") AND PlayerID_2 IN (5992, 2)) "\
-            "OR (PlayerID_1 IN (5992, 2) AND PlayerID_2 IN (19)) "\
-            "AND Date < '20140101'"
+    comps = []
+    for id in df['ID']:
+        comps.append(id)
+    if not comps:
+        return
+    comps = str(comps).replace('[', '').replace(']', '')
+    query = "SELECT M.[PlayerID_1] "\
+            ",M.[PlayerID_2] "\
+            ",M.[TournamentID] "\
+            ",T.[SurfaceID] "\
+            ",M.[Date] "\
+            ",M.[Result] "\
+            ",M.[Odds_1] "\
+            ",M.[Odds_2] "\
+            ",M.[FirstServePercentage_1] "\
+            ",M.[FirstServePercentage_2] "\
+            ",M.[Aces_1] "\
+            ",M.[Aces_2] "\
+            ",M.[DoubleFaults_1] "\
+            ",M.[DoubleFaults_2] "\
+            ",M.[UnforcedErrors_1] "\
+            ",M.[UnforcedErrors_2] "\
+            ",M.[WonFirstServePercentage_1] "\
+            ",M.[WonFirstServePercentage_2] "\
+            ",M.[WonSecondServePercentage_1] "\
+            ",M.[WonSecondServePercentage_2] "\
+            ",M.[WonReturnPercentage_1] "\
+            ",M.[WonReturnPercentage_2] "\
+            ",M.[Winners_1] "\
+            ",M.[Winners_2] "\
+            ",M.[BreakPointsWonPercentage_1] "\
+            ",M.[BreakPointsWonPercentage_2] "\
+            ",M.[NetApproachesWonPercentage_1] "\
+            ",M.[NetApproachesWonPercentage_2] "\
+            ",M.[TotalPointsWonPercentage_1] "\
+            ",M.[TotalPointsWonPercentage_2] "\
+            ",M.[FastestServe_1] "\
+            ",M.[FastestServe_2] "\
+            ",M.[AverageFirstServeSpeed_1] "\
+            ",M.[AverageFirstServeSpeed_2] "\
+            ",M.[AverageSecondServeSpeed_1] "\
+            ",M.[AverageSecondServeSpeed_2]  "\
+            "FROM TennisML.Stat.Matches M "\
+            "INNER JOIN TennisML.Stat.Tournaments T ON T.TournamentID = M.TournamentID "\
+            "WHERE ((PlayerID_1 IN (" + str(ID1) + ") AND PlayerID_2 IN (" + comps + ")) "\
+            "OR (PlayerID_1 IN (" + comps + ") AND PlayerID_2 IN (" + str(ID1) + "))) "\
+            "AND M.Date < '" + str(GameDate) + "' "
+    df = utils.sql_read(query)
+    return df
 
 # Discounting Stats
-def TimeDiscounting(time):
-    return min(const.DF ** time, const.DF)
+def TimeDiscounting(timeDF):
+    timeDF = np.minimum(pow(const.DF, timeDF), const.DF)
+    return timeDF
 
 
+def AddWeightings(ID1, ID2, GameDate, Surface):
+    df = FindCompsGames(ID1, ID2, GameDate)
+    if df is None:
+        return
+    T = (GameDate - pd.to_datetime(df['Date']).dt.date).dt.days / 365
+    df['Time Weighting'] = TimeDiscounting(T)
+    df['Surface Weighting'] = 0.0
+    for i, s in enumerate(df['SurfaceID']):
+        df['Surface Weighting'].iat[i] = const.SURFACE_WEIGHTING[s][Surface]
+    df['Weight'] = df['Time Weighting'] * df['Surface Weighting']
+    return df
 
-df = FindCompsGames(19, 5992, '20150101')
+def Direct(ID1, ID2, GameDate):
+    query = "SELECT Count(PlayerID_1) "\
+            "FROM [TennisML].[Stat].[Matches] "\
+            "WHERE PlayerID_1 = " + str(ID1) + " AND PlayerID_2 = " + str(ID2) + " AND Date < '" + str(GameDate) + "'"
+    df1 = utils.sql_read(query)
+    query = "SELECT Count(PlayerID_1) " \
+            "FROM [TennisML].[Stat].[Matches] " \
+            "WHERE PlayerID_1 = " + str(ID2) + " AND PlayerID_2 = " + str(ID1) + " AND Date < '" + str(GameDate) + "'"
+    df2 = utils.sql_read(query)
+
+    return float((df1 / (df1 + df2)).iat[0, 0])
+
+def replace_nan(x):
+    return 0 if math.isnan(x) else x
+
+def createFeatures(ID1, ID2, GameDate, Surface):
+    df = FindComps(ID1, ID2, GameDate)
+    df1 = AddWeightings(ID1, ID2, GameDate, Surface)
+    df2 = AddWeightings(ID2, ID1, GameDate, Surface)
+    # if (df1 is None) | (df2 is None):
+    #     return 0.0
+    totalFS1 = 0.0
+    totalFS2 = 0.0
+    totalW1SP1 = 0.0
+    totalW1SP2 = 0.0
+    totalW2SP1 = 0.0
+    totalW2SP2 = 0.0
+    totalWSP1 = 0.0
+    totalWSP2 = 0.0
+    totalWRP1 = 0.0
+    totalWRP2 = 0.0
+    totalTPW1 = 0.0
+    totalTPW2 = 0.0
+    totalACES1 = 0.0
+    totalACES2 = 0.0
+    totalDF1 = 0.0
+    totalDF2 = 0.0
+    totalUE1 = 0.0
+    totalUE2 = 0.0
+    totalWIS1 = 0.0
+    totalWIS2 = 0.0
+    totalBP1 = 0.0
+    totalBP2 = 0.0
+    totalNA1 = 0.0
+    totalNA2 = 0.0
+    totalA1S1 = 0.0
+    totalA1S2 = 0.0
+    totalA2S1 = 0.0
+    totalA2S2 = 0.0
+    totalUNC = 0.0
+    for i, c in enumerate(df['ID']):
+        # If Comp is Player 1
+        df3 = df1.loc[(df1['PlayerID_1'] == df['ID'].iat[i])]
+        # If Comp is Player 2
+        df4 = df1.loc[(df1['PlayerID_2'] == df['ID'].iat[i])]
+        df4 = df4.rename(columns={'PlayerID_1': 'PlayerID_2',
+                                 'PlayerID_2': 'PlayerID_1',
+                                 'Odds_1': 'Odds_2',
+                                 'Odds_2': 'Odds_1',
+                                 'FirstServePercentage_1': 'FirstServePercentage_2',
+                                 'FirstServePercentage_2': 'FirstServePercentage_1',
+                                 'Aces_1': 'Aces_2',
+                                 'Aces_2': 'Aces_1',
+                                 'DoubleFaults_1': 'DoubleFaults_2',
+                                 'DoubleFaults_2': 'DoubleFaults_1',
+                                 'UnforcedErrors_1': 'UnforcedErrors_2',
+                                 'UnforcedErrors_2': 'UnforcedErrors_1',
+                                 'WonFirstServePercentage_1': 'WonFirstServePercentage_2',
+                                 'WonFirstServePercentage_2': 'WonFirstServePercentage_1',
+                                 'WonSecondServePercentage_1': 'WonSecondServePercentage_2',
+                                 'WonSecondServePercentage_2': 'WonSecondServePercentage_1',
+                                 'WonReturnPercentage_1': 'WonReturnPercentage_2',
+                                 'WonReturnPercentage_2': 'WonReturnPercentage_1',
+                                 'Winners_1': 'Winners_2',
+                                 'Winners_2': 'Winners_1',
+                                 'BreakPointsWonPercentage_1': 'BreakPointsWonPercentage_2',
+                                 'BreakPointsWonPercentage_2': 'BreakPointsWonPercentage_1',
+                                 'NetApproachesWonPercentage_1': 'NetApproachesWonPercentage_2',
+                                 'NetApproachesWonPercentage_2': 'NetApproachesWonPercentage_1',
+                                 'TotalPointsWon_1': 'TotalPointsWon_2',
+                                 'TotalPointsWon_2': 'TotalPointsWon_1',
+                                 'FastestServe_1': 'FastestServe_2',
+                                 'FastestServe_2': 'FastestServe_1',
+                                 'AverageFirstServeSpeed_1': 'AverageFirstServeSpeed_2',
+                                 'AverageFirstServeSpeed_2': 'AverageFirstServeSpeed_1',
+                                 'AverageSecondServeSpeed_1': 'AverageSecondServeSpeed_2',
+                                 'AverageSecondServeSpeed_2': 'AverageSecondServeSpeed_1'})
+        df_player1 = df3.append(df4, sort=False)
+        # If Comp is Player 1
+        df5 = df2.loc[(df2['PlayerID_1'] == df['ID'].iat[i])]
+        # If Comp is Player 2
+        df6 = df2.loc[(df2['PlayerID_2'] == df['ID'].iat[i])]
+        df6 = df6.rename(columns={'PlayerID_1': 'PlayerID_2',
+                                  'PlayerID_2': 'PlayerID_1',
+                                  'Odds_1': 'Odds_2',
+                                  'Odds_2': 'Odds_1',
+                                  'FirstServePercentage_1': 'FirstServePercentage_2',
+                                  'FirstServePercentage_2': 'FirstServePercentage_1',
+                                  'Aces_1': 'Aces_2',
+                                  'Aces_2': 'Aces_1',
+                                  'DoubleFaults_1': 'DoubleFaults_2',
+                                  'DoubleFaults_2': 'DoubleFaults_1',
+                                  'UnforcedErrors_1': 'UnforcedErrors_2',
+                                  'UnforcedErrors_2': 'UnforcedErrors_1',
+                                  'WonFirstServePercentage_1': 'WonFirstServePercentage_2',
+                                  'WonFirstServePercentage_2': 'WonFirstServePercentage_1',
+                                  'WonSecondServePercentage_1': 'WonSecondServePercentage_2',
+                                  'WonSecondServePercentage_2': 'WonSecondServePercentage_1',
+                                  'WonReturnPercentage_1': 'WonReturnPercentage_2',
+                                  'WonReturnPercentage_2': 'WonReturnPercentage_1',
+                                  'Winners_1': 'Winners_2',
+                                  'Winners_2': 'Winners_1',
+                                  'BreakPointsWonPercentage_1': 'BreakPointsWonPercentage_2',
+                                  'BreakPointsWonPercentage_2': 'BreakPointsWonPercentage_1',
+                                  'NetApproachesWonPercentage_1': 'NetApproachesWonPercentage_2',
+                                  'NetApproachesWonPercentage_2': 'NetApproachesWonPercentage_1',
+                                  'TotalPointsWon_1': 'TotalPointsWon_2',
+                                  'TotalPointsWon_2': 'TotalPointsWon_1',
+                                  'FastestServe_1': 'FastestServe_2',
+                                  'FastestServe_2': 'FastestServe_1',
+                                  'AverageFirstServeSpeed_1': 'AverageFirstServeSpeed_2',
+                                  'AverageFirstServeSpeed_2': 'AverageFirstServeSpeed_1',
+                                  'AverageSecondServeSpeed_1': 'AverageSecondServeSpeed_2',
+                                  'AverageSecondServeSpeed_2': 'AverageSecondServeSpeed_1'})
+        df_player2 = df5.append(df6, sort=False)
+
+        FS1 = df_player1['FirstServePercentage_2'].mean()
+        totalFS1 += FS1
+        FS2 = df_player2['FirstServePercentage_2'].mean()
+        totalFS2 += FS2
+        W1SP1 = df_player1['WonFirstServePercentage_2'].mean()
+        totalW1SP1 += W1SP1
+        W1SP2 = df_player2['WonFirstServePercentage_2'].mean()
+        totalW1SP2 += W1SP2
+        W2SP1 = df_player1['WonSecondServePercentage_2'].mean()
+        totalW2SP1 += W2SP1
+        W2SP2 = df_player2['WonSecondServePercentage_2'].mean()
+        totalW2SP2 += W2SP2
+        WSP1 = W1SP1 * FS1 + W2SP1 * (1 - FS1)
+        totalWSP1 += WSP1
+        WSP2 = W1SP2 * FS2 + W2SP2 * (1 - FS2)
+        totalWSP2 += WSP2
+        WRP1 = df_player1['WonReturnPercentage_2'].mean()
+        totalWRP1 += WRP1
+        WRP2 = df_player2['WonReturnPercentage_2'].mean()
+        totalWRP2 += WRP2
+        TPW1 = df_player1['TotalPointsWonPercentage_2'].mean()
+        totalTPW1 += TPW1
+        TPW2 = df_player2['TotalPointsWonPercentage_2'].mean()
+        totalTPW2 += TPW2
+        ACES1 = df_player1['Aces_2'].mean()
+        totalACES1 += ACES1
+        ACES2 = df_player2['Aces_2'].mean()
+        totalACES2 += ACES2
+        DF1 = df_player1['DoubleFaults_2'].mean()
+        totalDF1 += DF1
+        DF2 = df_player2['DoubleFaults_2'].mean()
+        totalDF2 += DF2
+        UE1 = df_player1['UnforcedErrors_2'].mean()
+        totalUE1 += UE1
+        UE2 = df_player2['UnforcedErrors_2'].mean()
+        totalUE2 += UE2
+        WIS1 = df_player1['Winners_2'].mean()
+        totalWIS1 += WIS1
+        WIS2 = df_player2['Winners_2'].mean()
+        totalWIS2 += WIS2
+        BP1 = df_player1['BreakPointsWonPercentage_2'].mean()
+        totalBP1 += BP1
+        BP2 = df_player2['BreakPointsWonPercentage_2'].mean()
+        totalBP2 += BP2
+        NA1 = df_player1['NetApproachesWonPercentage_2'].mean()
+        totalNA1 += NA1
+        NA2 = df_player2['NetApproachesWonPercentage_2'].mean()
+        totalNA2 += NA2
+        A1S1 = df_player1['AverageFirstServeSpeed_2'].mean()
+        totalA1S1 += A1S1
+        A1S2 = df_player2['AverageFirstServeSpeed_2'].mean()
+        totalA1S2 += A1S2
+        A2S1 = df_player1['AverageSecondServeSpeed_2'].mean()
+        totalA2S1 += A2S1
+        A2S2 = df_player2['AverageSecondServeSpeed_2'].mean()
+        totalA2S2 += A2S2
+        UNC = sum(df_player1['Weight']) * sum(df_player2['Weight'])
+        totalUNC += UNC
+
+    n = len(df['ID'])
+    if n != 0:
+        totalFS1 /= n
+        totalFS2 /= n
+        totalW1SP1 /= n
+        totalW1SP2 /= n
+        totalW2SP1 /= n
+        totalW2SP2 /= n
+        totalWSP1 /= n
+        totalWSP2 /= n
+        totalWRP1 /= n
+        totalWRP2 /= n
+        totalTPW1 /= n
+        totalTPW2 /= n
+        totalACES1 /= n
+        totalACES2 /= n
+        totalDF1 /= n
+        totalDF2 /= n
+        totalUE1 /= n
+        totalUE2 /= n
+        totalWIS1 /= n
+        totalWIS2 /= n
+        totalBP1 /= n
+        totalBP2 /= n
+        totalNA1 /= n
+        totalNA2 /= n
+        totalA1S1 /= n
+        totalA1S2 /= n
+        totalA2S1 /= n
+        totalA2S2 /= n
+        totalUNC /= n
+    else:
+        return None
+
+    COMPLETE1 = totalWSP1 * totalWRP1
+    COMPLETE2 = totalWSP2 * totalWRP2
+    SERVEADV1 = totalWSP1 - totalWRP2
+    SERVEADV2 = totalWSP2 - totalWRP1
+
+    f = Features(replace_nan(totalFS1 - totalFS2),
+                 replace_nan(totalW1SP1 - totalW1SP2),
+                 replace_nan(totalW2SP1 - totalW2SP2),
+                 replace_nan(totalWSP1 - totalWSP2),
+                 replace_nan(totalWRP1 - totalWRP2),
+                 replace_nan(totalTPW1 - totalTPW2),
+                 replace_nan(totalACES1 - totalACES2),
+                 replace_nan(totalDF1 - totalDF2),
+                 replace_nan(totalUE1 - totalUE2),
+                 replace_nan(totalWIS1 - totalWIS2),
+                 replace_nan(totalBP1 - totalBP2),
+                 replace_nan(totalNA1 - totalNA2),
+                 replace_nan(totalA1S1 - totalA1S2),
+                 replace_nan(totalA2S1 - totalA2S2),
+                 replace_nan(COMPLETE1 - COMPLETE2),
+                 replace_nan(SERVEADV1 - SERVEADV2),
+                 replace_nan(Direct(ID1, ID2, GameDate)),
+                 replace_nan(totalUNC))
+    return f
 
 
-
-    # Making Features
-    query = "SELECT * FROM Stat.Features"
-    features = utils.sql_read(query)
-    query = "SELECT * FROM Stat.Matches"
+def updateFeatures():
+    query = "SELECT M.[PlayerID_1] " \
+            ",M.[PlayerID_2] " \
+            ",M.[TournamentID] " \
+            ",T.[SurfaceID] " \
+            ",M.[Date] " \
+            ",M.[Result] " \
+            ",M.[Odds_1] " \
+            ",M.[Odds_2] " \
+            ",M.[FirstServePercentage_1] " \
+            ",M.[FirstServePercentage_2] " \
+            ",M.[Aces_1] " \
+            ",M.[Aces_2] " \
+            ",M.[DoubleFaults_1] " \
+            ",M.[DoubleFaults_2] " \
+            ",M.[UnforcedErrors_1] " \
+            ",M.[UnforcedErrors_2] " \
+            ",M.[WonFirstServePercentage_1] " \
+            ",M.[WonFirstServePercentage_2] " \
+            ",M.[WonSecondServePercentage_1] " \
+            ",M.[WonSecondServePercentage_2] " \
+            ",M.[WonReturnPercentage_1] " \
+            ",M.[WonReturnPercentage_2] " \
+            ",M.[Winners_1] " \
+            ",M.[Winners_2] " \
+            ",M.[BreakPointsWonPercentage_1] " \
+            ",M.[BreakPointsWonPercentage_2] " \
+            ",M.[NetApproachesWonPercentage_1] " \
+            ",M.[NetApproachesWonPercentage_2] " \
+            ",M.[TotalPointsWonPercentage_1] " \
+            ",M.[TotalPointsWonPercentage_2] " \
+            ",M.[FastestServe_1] " \
+            ",M.[FastestServe_2] " \
+            ",M.[AverageFirstServeSpeed_1] " \
+            ",M.[AverageFirstServeSpeed_2] " \
+            ",M.[AverageSecondServeSpeed_1] " \
+            ",M.[AverageSecondServeSpeed_2]  " \
+            "FROM TennisML.Stat.Matches M " \
+            "INNER JOIN TennisML.Stat.Tournaments T ON T.TournamentID = M.TournamentID " \
+            "WHERE M.Date IS NOT NULL"
     matches = utils.sql_read(query)
     # Compare matches with features
-
-
-    # For each missing rows, build features
+    matches['Uncertainty'] = 0.0
+    for i, r in matches.iterrows():
+        print(r['PlayerID_1'], r['PlayerID_2'], r['Date'].date(), r['SurfaceID'])
+        f = createFeatures(r['PlayerID_1'], r['PlayerID_2'], r['Date'].date(), r['SurfaceID'])
+        if f is not None:
+            break
