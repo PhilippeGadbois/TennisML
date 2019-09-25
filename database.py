@@ -466,5 +466,7 @@ def updateFeatures():
 
     end = time.time()
     print('Time: ' + str(end - start) + 's')
-    return features
+    df.to_pickle("features.pkl")
+    return
+
 
