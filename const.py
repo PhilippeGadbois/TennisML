@@ -27,3 +27,8 @@ SURFACE_WEIGHTING = pd.DataFrame({'Index': [1, 2, 3, 4, 5, 6],
                                   5: [0.24, 0.14, 0.25, 0.0, 1.0, 0.0],
                                   6: [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]}).set_index('Index')
 
+# Uncertainty Threshold
+UNC_T = 0.1
+
+# Layers Size
+L_SIZE = 100
