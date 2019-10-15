@@ -1,4 +1,7 @@
 import const as const
+from datetime import date, datetime
+from scipy.stats import zscore
+
 
 
 def pre_clean(m):
@@ -27,17 +30,17 @@ def pre_clean(m):
 
 def post_clean(f):
     # First Serve
-    f = f[(f['FS'] > -1) & (f['FS'] < 1)]
+    f = f[(f['FS'] >= -1) & (f['FS'] <= 1)]
     # Won 1st Serve Percentage
-    f = f[(f['W1SP'] > -1) & (f['W1SP'] < 1)]
+    f = f[(f['W1SP'] >= -1) & (f['W1SP'] <= 1)]
     # Won 2nd Serve Percentage
-    f = f[(f['W2SP'] > -1) & (f['W2SP'] < 1)]
+    f = f[(f['W2SP'] >= -1) & (f['W2SP'] <= 1)]
     # Won Serve Percentage
-    f = f[(f['WSP'] > -1) & (f['WSP'] < 1)]
+    f = f[(f['WSP'] >= -1) & (f['WSP'] <= 1)]
     # Won Return Percentage
-    f = f[(f['WRP'] > -1) & (f['WRP'] < 1)]
+    f = f[(f['WRP'] >= -1) & (f['WRP'] <= 1)]
     # Total Points Won Percentage
-    f = f[(f['TPW'] > -1) & (f['TPW'] < 1)]
+    f = f[(f['TPW'] >= -1) & (f['TPW'] <= 1)]
     # Aces
     f = f
     # Double Faults
@@ -47,7 +50,7 @@ def post_clean(f):
     # Winners (not enough data)
     f = f.drop(['WIS'], axis=1)
     # Break Points
-    f = f[(f['BP'] > -1) & (f['BP'] < 1)]
+    f = f[(f['BP'] >= -1) & (f['BP'] <= 1)]
     # Net Approaches (not enough data)
     f = f.drop(['NA'], axis=1)
     # Average 1st Speed (not enough data)
@@ -55,13 +58,17 @@ def post_clean(f):
     # Average 2nd Speed (not enough data)
     f = f.drop(['A2S'], axis=1)
     # Complete
-    f = f[(f['COMPLETE'] > -1) & (f['COMPLETE'] < 1)]
+    f = f[(f['COMPLETE'] >= -1) & (f['COMPLETE'] <= 1)]
     # Serve Advantage
-    f = f[(f['SERVEADV'] > -1) & (f['SERVEADV'] < 1)]
+    f = f[(f['SERVEADV'] >= -1) & (f['SERVEADV'] <= 1)]
     # Direct
-    f = f[(f['DIRECT'] > -1) & (f['DIRECT'] < 1)]
+    f = f[(f['DIRECT'] >= 0) & (f['DIRECT'] <= 1)]
     # Uncertainty Threshold
     f = f[(f['UNC'] > const.UNC_T)]
+    # Remove na
+    # f = f.dropna()
+    # Normalize data
+    f[['FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV']] = f[['FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV']].apply(zscore)
     return f
 
 

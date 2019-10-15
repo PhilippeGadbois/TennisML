@@ -33,6 +33,8 @@ class Features:
 
 
 def update():
+
+    print("Importing players...")
     # Importing Players Table
     query = "SELECT * FROM players_atp"
     df = utils.access_read(query)
@@ -42,6 +44,7 @@ def update():
     df['Birthdate'] = pd.to_datetime(df['Birthdate']).apply(lambda x: x.date())
     df.to_pickle("players.pkl")
 
+    print("Importing surfaces...")
     # Importing Surface Table
     query = "SELECT * FROM courts"
     df = utils.access_read(query)
@@ -49,6 +52,7 @@ def update():
     utils.sql_write(df, 'Surface')
     df.to_pickle("surface.pkl")
 
+    print("Importing tournaments...")
     # Importing Tournaments
     query = "SELECT * FROM tours_atp"
     df = utils.access_read(query)
@@ -58,6 +62,42 @@ def update():
     df['Date'] = pd.to_datetime(df['Date']).apply(lambda x: x.date())
     df.to_pickle("tournaments.pkl")
 
+    print("Importing today's games...")
+    # Importing Today's games
+    query = 'SELECT * FROM today_atp'
+    df = utils.access_read(query)
+    # Unknown players
+    df = df[(df['ID1'] != 3699) & (df['ID1'] != 3700)]
+    df = df[(df['ID2'] != 3699) & (df['ID2'] != 3700)]
+    df = df[df['RESULT'] == '']
+    df = df[['TOUR', 'ID1', 'ID2']]
+    df.columns = ['TournamentID', 'PlayerID_1', 'PlayerID_2']
+    pl = pd.read_pickle("players.pkl")
+    df = pd.merge(df, pl, 'inner', left_on=['PlayerID_1'], right_on=['PlayerID'])
+    df = pd.merge(df, pl, 'inner', left_on=['PlayerID_2'], right_on=['PlayerID'])
+    # Double Players
+    df = df[~df['Name_x'].str.contains('/', regex=False)]
+    df = df[~df['Name_y'].str.contains('/', regex=False)]
+    df = df[['PlayerID_1', 'PlayerID_2', 'TournamentID']]
+    # Surface
+    tour = pd.read_pickle("tournaments.pkl")
+    df = pd.merge(df, tour, 'left', on=['TournamentID'])
+    df = df[['PlayerID_1', 'PlayerID_2', 'TournamentID', 'SurfaceID']]
+    # Date
+    now = datetime.now()
+    df['Date'] = datetime(year=now.year, month=now.month, day=now.day).date()
+    # Odds
+    query = "SELECT * FROM odds_atp"
+    odds = utils.access_read(query)
+    odds = odds[odds['ID_B_O'] == const.BETTING_SITE] # only 1 betting site for now
+    odds = odds[['ID1_O', 'ID2_O', 'ID_T_O', 'K1', 'K2']]
+    odds.columns = ['PlayerID_1', 'PlayerID_2', 'TournamentID', 'Odds_1', 'Odds_2']
+    df = pd.merge(df, odds, 'left', on=['PlayerID_1', 'PlayerID_2', 'TournamentID'])
+    df = df[~np.isnan(df['Odds_1'])]
+    df = df.reset_index(drop=True)
+    df.to_pickle("Matches/matches_" + str(now.year) + "_" + str(now.month) + '_' + str(now.day) + ".pkl")
+
+    print("Importing matches...")
     # Importing Games
     query = "SELECT * FROM games_atp"
     games = utils.access_read(query)
@@ -65,7 +105,7 @@ def update():
     games.columns = ['PlayerID_1', 'PlayerID_2', 'TournamentID', 'Date', 'Result']
     query = "SELECT * FROM odds_atp"
     odds = utils.access_read(query)
-    odds = odds[odds['ID_B_O'] == 1] # only 1 betting site for now
+    odds = odds[odds['ID_B_O'] == const.BETTING_SITE] # only 1 betting site for now
     odds = odds[['ID1_O', 'ID2_O', 'ID_T_O', 'K1', 'K2']]
     odds.columns = ['PlayerID_1', 'PlayerID_2', 'TournamentID', 'Odds_1', 'Odds_2']
     query = "SELECT * FROM stat_atp"
@@ -123,6 +163,10 @@ def update():
     utils.sql_write(df_matches, 'Matches')
     df_matches['Date'] = pd.to_datetime(df_matches['Date']).apply(lambda x: x.date())
     df_matches.to_pickle("matches.pkl")
+
+    print("Updating features...")
+    # Updating features
+    updateFeatures()
 
 
 # Finding comparable IDs
@@ -416,16 +460,77 @@ def createFeatures(matches, ID1, ID2, GameDate, Surface):
                      replace_nan(totalUNC))
         return f
 
+#
+# def updateFeatures():
+#     start = time()
+#     matches = pd.read_pickle("matches.pkl")
+#     matches = matches.loc[matches['Date'].notnull()]
+#     # matches = cl.pre_clean(matches)
+#     tournaments = pd.read_pickle("tournaments.pkl")
+#     df = pd.merge(matches, tournaments[['TournamentID','SurfaceID']], 'inner', on=['TournamentID'])
+#     # Compare matches with features
+#     features = df[['PlayerID_1', 'PlayerID_2', 'TournamentID', 'Date', 'Odds_1', 'Odds_2']]
+#     features['FS'] = 0.0
+#     features['W1SP'] = 0.0
+#     features['W2SP'] = 0.0
+#     features['WSP'] = 0.0
+#     features['WRP'] = 0.0
+#     features['TPW'] = 0.0
+#     features['ACES'] = 0.0
+#     features['DF'] = 0.0
+#     features['UE'] = 0.0
+#     features['WIS'] = 0.0
+#     features['BP'] = 0.0
+#     features['NA'] = 0.0
+#     features['A1S'] = 0.0
+#     features['A2S'] = 0.0
+#     features['COMPLETE'] = 0.0
+#     features['SERVEADV'] = 0.0
+#     features['DIRECT'] = 0.5
+#     features['UNC'] = 0.0
+#     for i, r in df.iterrows():
+#         f = createFeatures(df, r['PlayerID_1'], r['PlayerID_2'], r['Date'], r['SurfaceID'])
+#         if f is not None:
+#             features['FS'].iat[i] = f.FS
+#             features['W1SP'].iat[i] = f.W1SP
+#             features['W2SP'].iat[i] = f.W2SP
+#             features['WSP'].iat[i] = f.WSP
+#             features['WRP'].iat[i] = f.WRP
+#             features['TPW'].iat[i] = f.TPW
+#             features['ACES'].iat[i] = f.ACES
+#             features['DF'].iat[i] = f.DF
+#             features['UE'].iat[i] = f.UE
+#             features['WIS'].iat[i] = f.WIS
+#             features['BP'].iat[i] = f.BP
+#             features['NA'].iat[i] = f.NA
+#             features['A1S'].iat[i] = f.A1S
+#             features['A2S'].iat[i] = f.A2S
+#             features['COMPLETE'].iat[i] = f.COMPLETE
+#             features['SERVEADV'].iat[i] = f.SERVEADV
+#             features['DIRECT'].iat[i] = f.DIRECT
+#             features['UNC'].iat[i] = f.UNC
+#         if i % 100 == 0:
+#             print(i)
+#
+#     end = time()
+#     print('Time: ' + str(end - start) + 's')
+#     features.to_pickle("features.pkl")
+#     return
 
 def updateFeatures():
-    start = time()
+
+    # start = time()
     matches = pd.read_pickle("matches.pkl")
     matches = matches.loc[matches['Date'].notnull()]
     # matches = cl.pre_clean(matches)
     tournaments = pd.read_pickle("tournaments.pkl")
-    df = pd.merge(matches, tournaments[['TournamentID','SurfaceID']], 'inner', on=['TournamentID'])
+    df = pd.merge(matches, tournaments[['TournamentID', 'SurfaceID']], 'inner', on=['TournamentID'])
+    f = pd.read_pickle("features_v2.pkl")
+    # f = pd.read_pickle("features.pkl")
+    maxDate = max(f['Date'])
     # Compare matches with features
-    features = df[['PlayerID_1', 'PlayerID_2', 'TournamentID', 'Date', 'Odds_1', 'Odds_2']]
+    features = df[['PlayerID_1', 'PlayerID_2', 'TournamentID', 'SurfaceID', 'Date', 'Odds_1', 'Odds_2']]
+    features = features[features['Date'] > maxDate].reset_index(drop=True)
     features['FS'] = 0.0
     features['W1SP'] = 0.0
     features['W2SP'] = 0.0
@@ -433,7 +538,7 @@ def updateFeatures():
     features['WRP'] = 0.0
     features['TPW'] = 0.0
     features['ACES'] = 0.0
-    features['DF'] = 0.0
+    features['DF'] = 0.
     features['UE'] = 0.0
     features['WIS'] = 0.0
     features['BP'] = 0.0
@@ -444,7 +549,7 @@ def updateFeatures():
     features['SERVEADV'] = 0.0
     features['DIRECT'] = 0.5
     features['UNC'] = 0.0
-    for i, r in df.iterrows():
+    for i, r in features.iterrows():
         f = createFeatures(df, r['PlayerID_1'], r['PlayerID_2'], r['Date'], r['SurfaceID'])
         if f is not None:
             features['FS'].iat[i] = f.FS
@@ -467,12 +572,26 @@ def updateFeatures():
             features['UNC'].iat[i] = f.UNC
         if i % 100 == 0:
             print(i)
-        if i == 2000:
-            break
 
-    end = time()
-    print('Time: ' + str(end - start) + 's')
-    df.to_pickle("features.pkl")
+    # end = time()
+    # print('Time: ' + str(end - start) + 's')
+    f = pd.read_pickle("features.pkl")
+    f = f.append(features, sort=False)
+    f = f.sort_values(by=['Date']).reset_index(drop=True)
+    pl = pd.read_pickle("players.pkl")
+    f = pd.merge(f, pl, 'inner', left_on=['PlayerID_1'], right_on=['PlayerID'])
+    f = pd.merge(f, pl, 'inner', left_on=['PlayerID_2'], right_on=['PlayerID'])
+    f = f[~f['Name_x'].str.contains('/', regex=False)]
+    f = f[~f['Name_y'].str.contains('/', regex=False)]
+    f = f.drop(['SurfaceID'], axis=1)
+    f = f.sort_values(by=['Date'])
+    f = f.reset_index(drop=True)
+    f = f[['PlayerID_1', 'PlayerID_2', 'TournamentID', 'Date', 'Odds_1', 'Odds_2',
+       'FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'UE', 'WIS',
+       'BP', 'NA', 'A1S', 'A2S', 'COMPLETE', 'SERVEADV', 'DIRECT', 'UNC']]
+
+    f.to_pickle("features_v2.pkl")
+    print("pickled")
     return
 
 
@@ -480,7 +599,7 @@ def updateFeatures():
 def new_games(data):
     matches = pd.read_pickle("matches.pkl")
     matches = matches.loc[matches['Date'].notnull()]
-    matches = cl.pre_clean(matches)
+    # matches = cl.pre_clean(matches)
     tournaments = pd.read_pickle("tournaments.pkl")
     df = pd.merge(matches, tournaments[['TournamentID', 'SurfaceID']], 'inner', on=['TournamentID'])
     features = data
@@ -500,7 +619,7 @@ def new_games(data):
     features['A2S'] = 0.0
     features['COMPLETE'] = 0.0
     features['SERVEADV'] = 0.0
-    features['DIRECT'] = 0.0
+    features['DIRECT'] = 0.5
     features['UNC'] = 0.
     for i, r in data.iterrows():
         f = createFeatures(df, r['PlayerID_1'], r['PlayerID_2'], r['Date'], r['SurfaceID'])
@@ -524,38 +643,5 @@ def new_games(data):
             features['DIRECT'].iat[i] = f.DIRECT
             features['UNC'].iat[i] = f.UNC
     return features
-
-def test():
-    data = pd.DataFrame()
-    data['PlayerID_1'] = [891,9305,27851,3577,13674,13447,9649,9094,24245,33502,9831,27482,16996,1841,8313,4454,12614,32729,39309,7806]
-    data['PlayerID_2'] = [7043,45197,26009,12921,11522,9833,34298,791,36449,14432,11003,1035,11178,23595,9584,11517,28762,34233,1837,6691]
-    data['Date'] = datetime(year=2019,month=9,day=27).date()
-    data['SurfaceID'] = 1
-    # tournaments = pd.read_pickle("tournaments.pkl")
-    # data = pd.merge(data, tournaments[['TournamentID', 'SurfaceID']], 'inner', on=['TournamentID'])
-    features = new_games(data)
-    features = features[features['UNC'] > 0.1].reset_index(drop=True)
-    x = features[['FS','W1SP','W2SP','WSP','WRP','TPW','ACES','DF','BP','COMPLETE','SERVEADV','DIRECT']]
-    # load json and create model
-    json_file = open('model.json', 'r')
-    loaded_model_json = json_file.read()
-    json_file.close()
-    loaded_model = keras.models.model_from_json(loaded_model_json)
-    # load weights into new model
-    loaded_model.load_weights("model.h5")
-    print("Loaded model from disk")
-    Y_hat = pd.DataFrame(loaded_model.predict(x)).reset_index(drop=True)
-    Y_hat['Win'] = round(Y_hat[0])
-    winrate = Y_hat['Win'].sum()/Y_hat['Win'].count()
-
-    x = -1 * x
-
-    balance = 1000.0
-    for i, r in features.iterrows():
-        if Y_hat['Win'].iat[i] == 1:
-            balance += 50 * (features['Odds_1'].iat[i] - 1.0)
-        else:
-            balance -= 50
-        print(balance)
 
 

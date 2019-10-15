@@ -28,7 +28,10 @@ SURFACE_WEIGHTING = pd.DataFrame({'Index': [1, 2, 3, 4, 5, 6],
                                   6: [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]}).set_index('Index')
 
 # Uncertainty Threshold
-UNC_T = 0.1
+UNC_T = 0.5
 
 # Layers Size
-L_SIZE = 100
+L_SIZE = 64
+
+# Betting Site
+BETTING_SITE = 1
