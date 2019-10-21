@@ -2,16 +2,17 @@ import utils
 import pandas as pd
 import const
 import numpy as np
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import math
 from time import time
 import pickle
 import cleaning as cl
 from tensorflow import keras
+import re
 
 
 class Features:
-  def __init__(self, FS, W1SP, W2SP, WSP, WRP, TPW, ACES, DF, UE, WIS, BP, NA, A1S, A2S, COMPLETE, SERVEADV, DIRECT, UNC):
+  def __init__(self, FS, W1SP, W2SP, WSP, WRP, TPW, ACES, DF, UE, WIS, BP, NA, A1S, A2S, COMPLETE, SERVEADV, DIRECT, RETIRED, FATIGUE, UNC):
     self.FS = FS
     self.W1SP = W1SP
     self.W2SP = W2SP
@@ -29,6 +30,8 @@ class Features:
     self.COMPLETE = COMPLETE
     self.SERVEADV = SERVEADV
     self.DIRECT = DIRECT
+    self.RETIRED = RETIRED
+    self.FATIGUE = FATIGUE
     self.UNC = UNC
 
 
@@ -222,6 +225,75 @@ def Direct(matches, ID1, ID2, GameDate):
     ID1_win = matches['PlayerID_1'].loc[(matches['PlayerID_1'] == ID1) & (matches['PlayerID_2'] == ID2) & (matches['Date'] < GameDate)].size
     ID2_win = matches['PlayerID_1'].loc[(matches['PlayerID_1'] == ID2) & (matches['PlayerID_2'] == ID1) & (matches['Date'] < GameDate)].size
     return ID1_win / (ID1_win + ID2_win) if (ID1_win + ID2_win) else 0.5
+
+
+def Fatigue(matches, ID1, ID2, GameDate):
+    fatigue1 = 0.0
+    fatigue2 = 0.0
+    df1 = matches[(matches['PlayerID_1'] == ID1) | (matches['PlayerID_2'] == ID1)]
+    df1 = df1[(df1['Date'] < GameDate) & (df1['Date'] >= GameDate - timedelta(days=3))]
+    if not df1.empty:
+        for i, r in df1.iterrows():
+            myStr = r['Result']
+            nums = re.findall('\d+', myStr)
+            breakpoints = re.findall("\((\d+)\)", myStr)
+            nums = [int(x) for x in nums]
+            breakpoints = [int(x) for x in breakpoints]
+            fatigue1 += (sum(nums) - sum(breakpoints)) * const.FDF ** (GameDate - r['Date']).days
+    df1 = matches[(matches['PlayerID_1'] == ID2) | (matches['PlayerID_2'] == ID2)]
+    df1 = df1[(df1['Date'] < GameDate) & (df1['Date'] >= GameDate - timedelta(days=3))]
+    if not df1.empty:
+        for i, r in df1.iterrows():
+            myStr = r['Result']
+            nums = re.findall('\d+', myStr)
+            breakpoints = re.findall("\((\d+)\)", myStr)
+            nums = [int(x) for x in nums]
+            breakpoints = [int(x) for x in breakpoints]
+            nums = [int(x) for x in nums]
+            fatigue2 += (sum(nums) - sum(breakpoints)) * const.FDF ** (GameDate - r['Date']).days
+    return fatigue1 - fatigue2
+
+
+def Retired(matches, ID1, ID2, GameDate):
+    # Did he lose last game by retirement
+    df = matches[matches['PlayerID_2'] == ID1]
+    df = df[df['Date'] < GameDate]
+    retired = 0
+    if not df.empty:
+        df = df.tail(1)
+        if "ret" in df['Result'].iat[0]:
+            # check if he won a game after coming back
+            df1 = matches[matches['PlayerID_1'] == ID1]
+            df1 = df1[df1['Date'] < GameDate]
+            df1 = df1.tail(1)
+            if not df1.empty:
+                if df['Date'].iat[0] > df1['Date'].iat[0]:
+                    retired += 1
+
+        # Did he lose last game by retirement
+    df = matches[matches['PlayerID_2'] == ID2]
+    df = df[df['Date'] < GameDate]
+    if not df.empty:
+        df = df.tail(1)
+        if "ret" in df['Result'].iat[0]:
+            # check if he won a game after coming back
+            df1 = matches[matches['PlayerID_1'] == ID2]
+            df1 = df1[df1['Date'] < GameDate]
+            df1 = df1.tail(1)
+            if not df1.empty:
+                if df['Date'].iat[0] > df1['Date'].iat[0]:
+                    retired -= 1
+
+    return retired
+
+
+# f = pd.read_pickle("features_v2.pkl").reset_index(drop=True)
+# m = pd.read_pickle("matches.pkl")
+# f['FATIGUE'] = 0.0
+# for i, r in f.iterrows():
+#     f['FATIGUE'].iat[i] = Fatigue(m, r['PlayerID_1'], r['PlayerID_2'], r['Date'])
+#     if i % 1000 == 0:
+#         print(i)
 
 
 def replace_nan(x):
@@ -431,7 +503,6 @@ def createFeatures(matches, ID1, ID2, GameDate, Surface):
             totalA1S2 /= n
             totalA2S1 /= n
             totalA2S2 /= n
-            totalUNC /= n
         else:
             return None
 
@@ -457,6 +528,8 @@ def createFeatures(matches, ID1, ID2, GameDate, Surface):
                      replace_nan(COMPLETE1 - COMPLETE2),
                      replace_nan(SERVEADV1 - SERVEADV2),
                      replace_nan(Direct(matches, ID1, ID2, GameDate)),
+                     replace_nan(Retired(matches, ID1, ID2, GameDate)),
+                     replace_nan(Fatigue(matches, ID1, ID2, GameDate)),
                      replace_nan(totalUNC))
         return f
 
@@ -519,18 +592,20 @@ def createFeatures(matches, ID1, ID2, GameDate, Surface):
 
 def updateFeatures():
 
-    # start = time()
+    start = time()
     matches = pd.read_pickle("matches.pkl")
     matches = matches.loc[matches['Date'].notnull()]
     # matches = cl.pre_clean(matches)
     tournaments = pd.read_pickle("tournaments.pkl")
     df = pd.merge(matches, tournaments[['TournamentID', 'SurfaceID']], 'inner', on=['TournamentID'])
-    f = pd.read_pickle("features_v2.pkl")
-    # f = pd.read_pickle("features.pkl")
-    maxDate = max(f['Date'])
+    # f = pd.read_pickle("features_v2.pkl")
+    # # f = pd.read_pickle("features.pkl")
+    # maxDate = max(f['Date'] - timedelta(days=3))
+    # print(maxDate)
     # Compare matches with features
     features = df[['PlayerID_1', 'PlayerID_2', 'TournamentID', 'SurfaceID', 'Date', 'Odds_1', 'Odds_2']]
-    features = features[features['Date'] > maxDate].reset_index(drop=True)
+    # features = features[features['Date'] >= maxDate].reset_index(drop=True)
+    print(features['PlayerID_1'].count())
     features['FS'] = 0.0
     features['W1SP'] = 0.0
     features['W2SP'] = 0.0
@@ -548,6 +623,8 @@ def updateFeatures():
     features['COMPLETE'] = 0.0
     features['SERVEADV'] = 0.0
     features['DIRECT'] = 0.5
+    features['RETIRED'] = 0
+    features['FATIGUE'] = 0.0
     features['UNC'] = 0.0
     for i, r in features.iterrows():
         f = createFeatures(df, r['PlayerID_1'], r['PlayerID_2'], r['Date'], r['SurfaceID'])
@@ -569,28 +646,32 @@ def updateFeatures():
             features['COMPLETE'].iat[i] = f.COMPLETE
             features['SERVEADV'].iat[i] = f.SERVEADV
             features['DIRECT'].iat[i] = f.DIRECT
+            features['RETIRED'].iat[i] = f.RETIRED
+            features['FATIGUE'].iat[i] = f.FATIGUE
             features['UNC'].iat[i] = f.UNC
-        if i % 100 == 0:
+        print(i)
+        if (i % 2000 == 0) & (i != 0):
             print(i)
+            break
 
-    # end = time()
-    # print('Time: ' + str(end - start) + 's')
-    f = pd.read_pickle("features.pkl")
-    f = f.append(features, sort=False)
-    f = f.sort_values(by=['Date']).reset_index(drop=True)
+    end = time()
+    print('Time: ' + str(end - start) + 's')
+    # f = pd.read_pickle("features_v2.pkl")
+    # f = f.append(features, sort=False)
+    # f = f.sort_values(by=['Date']).reset_index(drop=True)
     pl = pd.read_pickle("players.pkl")
-    f = pd.merge(f, pl, 'inner', left_on=['PlayerID_1'], right_on=['PlayerID'])
+    # f = pd.merge(f, pl, 'inner', left_on=['PlayerID_1'], right_on=['PlayerID'])
+    f = pd.merge(features, pl, 'inner', left_on=['PlayerID_1'], right_on=['PlayerID'])
     f = pd.merge(f, pl, 'inner', left_on=['PlayerID_2'], right_on=['PlayerID'])
     f = f[~f['Name_x'].str.contains('/', regex=False)]
     f = f[~f['Name_y'].str.contains('/', regex=False)]
-    f = f.drop(['SurfaceID'], axis=1)
     f = f.sort_values(by=['Date'])
     f = f.reset_index(drop=True)
     f = f[['PlayerID_1', 'PlayerID_2', 'TournamentID', 'Date', 'Odds_1', 'Odds_2',
        'FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'UE', 'WIS',
-       'BP', 'NA', 'A1S', 'A2S', 'COMPLETE', 'SERVEADV', 'DIRECT', 'UNC']]
-
-    f.to_pickle("features_v2.pkl")
+       'BP', 'NA', 'A1S', 'A2S', 'COMPLETE', 'SERVEADV', 'DIRECT', 'RETIRED', 'FATIGUE', 'UNC']]
+    f = f.drop_duplicates()
+    f.to_pickle("features_v3.pkl")
     print("pickled")
     return
 
@@ -620,7 +701,9 @@ def new_games(data):
     features['COMPLETE'] = 0.0
     features['SERVEADV'] = 0.0
     features['DIRECT'] = 0.5
-    features['UNC'] = 0.
+    features['RETIRED'] = 0
+    features['FATIGUE'] = 0.0
+    features['UNC'] = 0.0
     for i, r in data.iterrows():
         f = createFeatures(df, r['PlayerID_1'], r['PlayerID_2'], r['Date'], r['SurfaceID'])
         if f is not None:
@@ -641,6 +724,8 @@ def new_games(data):
             features['COMPLETE'].iat[i] = f.COMPLETE
             features['SERVEADV'].iat[i] = f.SERVEADV
             features['DIRECT'].iat[i] = f.DIRECT
+            features['RETIRED'].iat[i] = f.RETIRED
+            features['FATIGUE'].iat[i] = f.FATIGUE
             features['UNC'].iat[i] = f.UNC
     return features
 

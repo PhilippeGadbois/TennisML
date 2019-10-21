@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 import numpy as np
+import math
 from mpl_toolkits.mplot3d import Axes3D
 
 def build_variables(x):
@@ -47,7 +48,7 @@ def build_variables(x):
 
 def learn():
 
-    f = pd.read_pickle("features.pkl")
+    f = pd.read_pickle("features_v2.pkl")
     f['Odds_1'] = 1 / f['Odds_1']
     f['Odds_2'] = 1 / f['Odds_2']
     f['Odds'] = f['Odds_1'] - f['Odds_2']
@@ -57,7 +58,7 @@ def learn():
     f['Y'] = 1
     f = build_variables(f)
     f = f[f['Date'] < datetime(year=2019, month=1, day=1).date()]
-    x = f[['FS','W1SP','W2SP','WSP','WRP','TPW','ACES','DF','BP','COMPLETE','SERVEADV','DIRECT', 'Odds']]
+    x = f[['FS','W1SP','W2SP','WSP','WRP','TPW','ACES','DF','BP','COMPLETE','SERVEADV','DIRECT', 'RETIRED', 'FATIGUE', 'Odds']]
     y = f[['Y']]
     X_train, X_test, Y_train, Y_test = train_test_split(x, y, test_size=0.3, shuffle=True)
 
@@ -99,8 +100,6 @@ def learn():
     pyplot.legend()
     pyplot.show()
 
-
-
     save(model)
 
     return model
@@ -130,18 +129,18 @@ def load(model):
 
 
 def profitability(model):
-
+    model = load("model_2019_10_20_14_50")
     f = pd.read_pickle("features_v2.pkl")
     f['Odds_1_prob'] = 1 / f['Odds_1']
     f['Odds_2_prob'] = 1 / f['Odds_2']
     f['Odds'] = f['Odds_1_prob'] - f['Odds_2_prob']
     # Remove backtest
-    f = f[(f['Date'] >= datetime(year=2019, month=10, day=13).date())]
+    f = f[(f['Date'] >= datetime(year=2019, month=1, day=1).date())]
     # f = f[(f['Date'] < datetime(year=2019, month=1, day=2).date())]
     f = f.reset_index(drop=True)
     f['Y'] = 1
     f = build_variables(f).reset_index(drop=True)
-    x = f[['FS','W1SP','W2SP','WSP','WRP','TPW','ACES','DF','BP','COMPLETE','SERVEADV','DIRECT', 'Odds']].reset_index(drop=True)
+    x = f[['FS','W1SP','W2SP','WSP','WRP','TPW','ACES','DF','BP','COMPLETE','SERVEADV','DIRECT', 'RETIRED', 'FATIGUE', 'Odds']].reset_index(drop=True)
 
     f['Y_hat'] = pd.DataFrame(model.predict(x))
     f['diff'] = np.where(f['Y']==1, f['Y_hat'] - f['Odds_1_prob'], f['Y_hat'] - f['Odds_2_prob'])
@@ -151,12 +150,10 @@ def profitability(model):
     f = pd.merge(f, pl, 'inner', left_on=['PlayerID_1'], right_on=['PlayerID'])
     f = pd.merge(f, pl, 'inner', left_on=['PlayerID_2'], right_on=['PlayerID'])
 
-
     threshold_diff = 0.05
     threshold_yhat = 0.4
     bets = f[(f['diff'] > threshold_diff) & (f['Y_hat'] > threshold_yhat)].reset_index(drop=True)
     # bets = f[(f['diff'] > threshold_diff)].reset_index(drop=True)
-
 
     bets = bets.sort_values(by=['Date']).reset_index(drop=True)
 
@@ -173,13 +170,29 @@ def profitability(model):
             prevBalanceProp = bets['balance_Prop'].iat[i - 1]
         if bets['Y'].iat[i] == 1:
             bets['balance_Fixed'].iat[i] = prevBalanceFixed + 50 * ((bets['odds@bet'].iat[i]) - 1.0)
-            bets['balance_Prop'].iat[i] = prevBalanceProp + (prevBalanceProp * 0.1) * ((bets['odds@bet'].iat[i]) - 1.0)
+            bets['balance_Prop'].iat[i] = prevBalanceProp + (prevBalanceProp * 0.05) * ((bets['odds@bet'].iat[i]) - 1.0)
         else:
             bets['balance_Fixed'].iat[i] = prevBalanceFixed - 50
-            bets['balance_Prop'].iat[i] = prevBalanceProp - (prevBalanceProp * 0.1)
+            bets['balance_Prop'].iat[i] = prevBalanceProp - (prevBalanceProp * 0.05)
 
-    months = bets['Date'].groupby([pd.to_datetime(bets['Date']).dt.months]).agg('count')
-    months.mean()
+    count = 0
+    maxCount = 0
+    # Longest lose streak
+    for i, r in bets.iterrows():
+        x = r['Y']
+        if x == 0:
+            count += 1
+            if count > maxCount:
+                maxCount = count
+                print("maxCount:" + str(maxCount) + "Date:" + str(r['Date']))
+        else:
+            count = 0
+
+
+
+
+    # months = bets['Date'].groupby([pd.to_datetime(bets['Date']).dt.months]).agg('count')
+    # months.mean()
 
     # ROI graph
     graph = pd.DataFrame(columns=['Diff', 'Yhat', 'ROI'])
@@ -232,15 +245,16 @@ def bets():
     # f = f.drop(['SurfaceID'], axis=1)
     f = f.reset_index(drop=True)
     f = cl.post_clean(f)
-    f = f[f['Date'] == date]
+    f = f[f['Date'] >= date]
+    f = f[np.isfinite(f['SurfaceID'])]
     print('Evaluating...')
     if f.empty:
         print('No games above uncertainty threshold')
         return f
     else:
-        x = f[['FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV', 'DIRECT', 'Odds']].reset_index(drop=True)
+        x = f[['FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV', 'DIRECT', 'RETIRED', 'FATIGUE', 'Odds']].reset_index(drop=True)
         f = f.reset_index(drop=True)
-        model = load("model_2019_10_9_0_12")
+        model = load("model_2019_10_20_14_50")
         f['Y_hat'] = pd.DataFrame(model.predict(x))
         f['diff'] = f['Y_hat'] - f['Odds_1_prob']
         return f
@@ -275,29 +289,29 @@ def save_to_csv():
 
 def manual_calc(f):
     f = bets()
-    # threshold_diff = 0.05
-    # threshold_yhat = 0.4
-    # df = f[(f['diff'] > threshold_diff) & (f['Y_hat'] > threshold_yhat)].reset_index(drop=True)
     pl = pd.read_pickle("players.pkl")
     df = pd.merge(f, pl, 'inner', left_on=['PlayerID_1'], right_on=['PlayerID'])
     df = pd.merge(df, pl, 'inner', left_on=['PlayerID_2'], right_on=['PlayerID'])
     df = df[['PlayerID_1', 'PlayerID_2', 'SurfaceID', 'Date', 'Name_x','Name_y', 'Odds_1', 'Odds_2', 'FS', 'W1SP',
        'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV',
-       'DIRECT', 'UNC', 'Odds_1_prob', 'Odds_2_prob', 'Odds', 'Y_hat', 'diff']]
+       'DIRECT', 'RETIRED', 'FATIGUE', 'UNC', 'Odds_1_prob', 'Odds_2_prob', 'Odds', 'Y_hat', 'diff']]
     df.columns = ['PlayerID_1', 'PlayerID_2', 'SurfaceID', 'Date','Name_1','Name_2', 'Odds_1', 'Odds_2', 'FS', 'W1SP',
        'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV',
-       'DIRECT', 'UNC', 'Odds_1_prob', 'Odds_2_prob', 'Odds', 'Y_hat', 'diff']
+       'DIRECT', 'RETIRED', 'FATIGUE', 'UNC', 'Odds_1_prob', 'Odds_2_prob', 'Odds', 'Y_hat', 'diff']
     df.to_csv("manualCalc.csv")
     f = pd.read_csv("manualCalc.csv")
     f['Odds_1_prob'] = 1 / f['Odds_1']
     f['Odds_2_prob'] = 1 / f['Odds_2']
     f['Odds'] = f['Odds_1_prob'] - f['Odds_2_prob']
-    x = f[['FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV', 'DIRECT',
+    x = f[['FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV', 'DIRECT', 'RETIRED', 'FATIGUE',
            'Odds']].reset_index(drop=True)
     f = f.reset_index(drop=True)
-    model = load("model_2019_10_9_0_12")
+    model = load("model_2019_10_20_14_50")
     f['Y_hat'] = pd.DataFrame(model.predict(x))
     f['diff'] = f['Y_hat'] - f['Odds_1_prob']
+    threshold_diff = 0.05
+    threshold_yhat = 0.4
+    df = f[(f['diff'] > threshold_diff) & (f['Y_hat'] > threshold_yhat)].reset_index(drop=True)
 
 
 
@@ -307,5 +321,6 @@ def main():
 
 
 # TODO: Check that reversal in bets() recalibrates the features
+# TODO: max date in updateFeatures()
 
 

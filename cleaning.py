@@ -66,9 +66,9 @@ def post_clean(f):
     # Uncertainty Threshold
     f = f[(f['UNC'] > const.UNC_T)]
     # Remove na
-    # f = f.dropna()
+    f = f.dropna()
     # Normalize data
-    f[['FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV']] = f[['FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV']].apply(zscore)
+    # f[['FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV']] = f[['FS', 'W1SP', 'W2SP', 'WSP', 'WRP', 'TPW', 'ACES', 'DF', 'BP', 'COMPLETE', 'SERVEADV']].apply(zscore)
     return f
 
 
